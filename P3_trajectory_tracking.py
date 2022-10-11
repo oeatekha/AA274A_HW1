@@ -40,6 +40,9 @@ class TrajectoryTracker:
             x_d, xd_d, xdd_d, y_d, yd_d, ydd_d: Desired state and derivatives
                 at time t according to self.coeffs
         """
+
+
+
         x_d = np.interp(t,self.traj_times,self.traj[:,0])
         y_d = np.interp(t,self.traj_times,self.traj[:,1])
         xd_d = np.interp(t,self.traj_times,self.traj[:,3])
@@ -58,10 +61,26 @@ class TrajectoryTracker:
             V, om: Control actions
         """
 
+
         dt = t - self.t_prev
         x_d, xd_d, xdd_d, y_d, yd_d, ydd_d = self.get_desired_state(t)
 
         ########## Code starts here ##########
+
+        if self.V_prev < V_PREV_THRES:
+            self.V_prev = V_PREV_THRES
+
+        xd = self.V_prev*np.cos(th)
+        yd = self.V_prev*np.sin(th)
+
+        jacobianInv = np.array([[np.cos(th), np.sin(th)], [-np.sin(th)/self.V_prev, np.cos(th)/self.V_prev]])
+        u1 = xdd_d - self.kpx*(x - x_d) - self.kdx*(xd - xd_d)
+        u2 = ydd_d - self.kpy*(y - y_d) - self.kdy*(yd - yd_d)
+        
+        VDOT = u1*np.cos(th) + u2*np.sin(th)
+        om = 1/self.V_prev*(-np.sin(th)*u1 + np.cos(th)*u2)
+        V = VDOT*dt + self.V_prev
+        
 
         ########## Code ends here ##########
 

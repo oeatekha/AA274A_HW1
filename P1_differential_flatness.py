@@ -1,8 +1,10 @@
 import math
+from tabnanny import filename_only
 import typing as T
 
 import numpy as np
-from numpy import linalg
+from numpy import arctan, linalg
+from regex import P
 from scipy.integrate import cumtrapz  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
 
@@ -36,9 +38,30 @@ def compute_traj_coeffs(initial_state: State, final_state: State, tf: float) -> 
     Hint: Use the np.linalg.solve function.
     """
     ########## Code starts here ##########
+    
+
+    phi = np.array([[1,0,0,0],[0,1,0,0],[1,tf,tf**2,tf**3],[0,1,2*tf,3*tf**2]])
+    state_x = np.array([[initial_state.x], [initial_state.xd], [final_state.x], [final_state.xd]])
+    state_y = np.array([[initial_state.y], [initial_state.yd], [final_state.y], [final_state.yd]])
+
+
+    basis_x = np.linalg.solve(phi, state_x)
+    basis_y = np.linalg.solve(phi, state_y)
+    coeffs = np.concatenate((basis_x,basis_y))
+    
 
     ########## Code ends here ##########
+     # X State
+    # initial_state_x = np.array([[1,0,0,0],[1,15,225,3375],[0,1,0,0],[0,1,30,675]]) 
+    # final_state_x = np.array([[0],[5],[0],[0]])
+    # initial_state_y = np.array([[1,0,0,0],[1,15,225,3375],[0,1,0,0],[0,1,30,675]]) 
+    # final_state_y = np.array([[0],[5],[-0.5],[-0.5]])
+    # alpha_x = np.linalg.solve(initial_state_x, final_state_x)
+    # alpha_y = np.linalg.solve(initial_state_y, final_state_y)
     return coeffs
+
+state1 = State(0,0,0.5,-np.pi/2)
+state2 = State(5,5,0.5,-np.pi/2)
 
 def compute_traj(coeffs: np.ndarray, tf: float, N: int) -> T.Tuple[np.ndarray, np.ndarray]:
     """
@@ -51,9 +74,20 @@ def compute_traj(coeffs: np.ndarray, tf: float, N: int) -> T.Tuple[np.ndarray, n
         traj (np.array shape [N,7]), N points along the trajectory, from t=0
             to t=tf, evenly spaced in time
     """
+    
     t = np.linspace(0, tf, N) # generate evenly spaced points from 0 to tf
     traj = np.zeros((N, 7))
+
+    traj[:,0] = 1*coeffs[0] + t*coeffs[1] + t**2*coeffs[2] + t**3*coeffs[3]
+    traj[:,1] = 1*coeffs[4] + t*coeffs[5] + t**2*coeffs[6] + t**3*coeffs[7]
+    traj[:,3] = 1*coeffs[1] + 2*t*coeffs[2] + 3*t**2*coeffs[3]
+    traj[:,4] = 1*coeffs[5] + 2*t*coeffs[6] + 3*t**2*coeffs[7]
+    traj[:,2] = np.arctan2(traj[:,4], traj[:,3])
+    traj[:,5] = 2*coeffs[2] + 6*t*coeffs[3]
+    traj[:,6] = 2*coeffs[6] + 6*t*coeffs[7]
+
     ########## Code starts here ##########
+
 
     ########## Code ends here ##########
 
@@ -64,14 +98,48 @@ def compute_controls(traj: np.ndarray) -> T.Tuple[np.ndarray, np.ndarray]:
     Input:
         traj (np.array shape [N,7])
     Outputs:
+    
         V (np.array shape [N]) V at each point of traj
         om (np.array shape [N]) om at each point of traj
     """
+
+
     ########## Code starts here ##########
+    
+    x_dot = traj[:,3]
+    y_dot = traj[:,4]
+    x_double = traj[:,5]
+    y_double = traj[:,6]
+
+    theta = traj[:,2]
+    V = np.array(y_dot/np.sin(theta))
+    om = []
+
+    
+    
+   
+    # compute the a and omega...
+    for i in range(V.size):
+        jacobian = np.array([[np.cos(theta[i]), -V[i]*np.sin(theta[i])], [np.sin(theta[i]), V[i]*np.cos(theta)[i]]])
+        control_inputs = np.array([x_double[i], y_double[i]])
+
+
+        if V[i] == 0 :
+            jacobian = np.array([[np.cos(theta[i-1]), -V[i-1]*np.sin(theta[i-1])], [np.sin(theta[i-1]), V[i]*np.cos(theta)[i-1]]])
+            control_inputs = np.array([x_double[i-1], y_double[i-1]])
+
+        aOmega_Current = np.linalg.solve(jacobian, control_inputs)
+        om.append(aOmega_Current[1])
+    #om.append(0)
+        #print("om size is ", om.size)
+    #print("om is ", om)
+    
 
     ########## Code ends here ##########
 
     return V, om
+
+    
 
 def compute_arc_length(V: np.ndarray, t: np.ndarray) -> np.ndarray:
     """
@@ -85,8 +153,11 @@ def compute_arc_length(V: np.ndarray, t: np.ndarray) -> np.ndarray:
 
     Hint: Use the function cumtrapz. This should take one line.
     """
+    
     s = None
     ########## Code starts here ##########
+    
+    s = cumtrapz(V,t, initial=0)
 
     ########## Code ends here ##########
     return s
@@ -112,6 +183,8 @@ def rescale_V(V: np.ndarray, om: np.ndarray, V_max: float, om_max: float) -> np.
           epsilon (e.g. 1e-6) to the denomenator
     """
     ########## Code starts here ##########
+    V_maxedV = np.clip(V, 0, V_max)
+    V_tilde = np.minimum(V_maxedV, np.absolute(V/(1e-6+np.array(om))*(om_max)))
 
     ########## Code ends here ##########
     return V_tilde
@@ -126,9 +199,14 @@ def compute_tau(V_tilde: np.ndarray, s: np.ndarray) -> np.ndarray:
     Output:
         tau: the new time history for the sequence. tau[i] is the time at s[i]. This has length T.
 
+    
     Hint: Use the function cumtrapz. This should take one line.
     """
     ########## Code starts here ##########
+    #print("s size is ", s.size)
+    temp = (1/(V_tilde+1e-6))
+    #print("temp size is ", temp.size)
+    tau = cumtrapz(temp, s, initial=0)
 
     ########## Code ends here ##########
     return tau
@@ -146,7 +224,7 @@ def rescale_om(V: np.ndarray, om: np.ndarray, V_tilde: np.ndarray) -> np.ndarray
     Hint: This should take one line.
     """
     ########## Code starts here ##########
-
+    om_tilde = V_tilde/(V+1e-6)*om
     ########## Code ends here ##########
     return om_tilde
 
@@ -234,7 +312,7 @@ if __name__ == "__main__":
 
     coeffs = compute_traj_coeffs(initial_state=s_0, final_state=s_f, tf=tf)
     t, traj = compute_traj(coeffs=coeffs, tf=tf, N=N)
-    V,om = compute_controls(traj=traj)
+    V, om = compute_controls(traj=traj)
 
     part_b_complete = False
     s = compute_arc_length(V, t)
